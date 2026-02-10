@@ -1,5 +1,7 @@
 # Agent Skills
 
+![gdb_skill](gdb_skill.png)
+
 A collection of skills for AI coding agents.
 
 ## Skills
