@@ -1,5 +1,9 @@
 # GDB Setup Script for Live Tracing
 # Usage: gdb -x setup.gdb ...
+#
+# In QEMU stub mode (USE_QEMU_STUB=1) gdb_start.sh connects via
+# "target remote :PORT" before sourcing this file, so these settings
+# apply equally to both normal and QEMU sessions.
 
 # 1. Disable pagination to prevent blocking on long output
 set pagination off

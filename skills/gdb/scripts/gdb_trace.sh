@@ -2,6 +2,7 @@
 # gdb_trace.sh - Set a conditional dprintf tracepoint on a running session.
 #
 # Handles the full interrupt -> delete old -> set new -> continue cycle.
+# Works in both normal mode (ptrace) and QEMU stub mode (USE_QEMU_STUB=1).
 #
 # Usage:
 #   # Unconditional trace:
@@ -36,9 +37,10 @@ get_gdb_pid() {
 }
 
 interrupt_gdb() {
-    local pid
-    pid=$(get_gdb_pid)
-    kill -INT "$pid" 2>/dev/null || true
+    # In QEMU stub mode gdb_start.sh launches gdb-multiarch; in normal mode it's gdb.
+    # Signal both so this function works regardless of which mode was used.
+    docker exec gdb-mcp-lab pkill -INT gdb-multiarch 2>/dev/null || true
+    docker exec gdb-mcp-lab pkill -INT gdb           2>/dev/null || true
     # GDB needs time to fully stop the inferior after SIGINT.
     # 0.5s is often not enough — commands sent too early are silently dropped.
     sleep 1
