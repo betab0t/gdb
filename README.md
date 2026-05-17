@@ -7,6 +7,7 @@ A growing collection of reverse engineering skills for AI coding agents.
 ## Skills
 
 - **[gdb](skills/gdb)** — Non-blocking debugging with the GNU Debugger (GDB). Trace live C/C++/Rust processes without the agent ever blocking on a breakpoint.
+- **[gdb-qemu](skills/gdb-qemu)** — GDB + QEMU stub mode for debugging x86-64 binaries inside Docker on Apple Silicon (or any environment where ptrace is unavailable).
 
 ## Installation
 
