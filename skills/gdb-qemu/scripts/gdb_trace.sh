@@ -2,7 +2,6 @@
 # gdb_trace.sh - Set a conditional dprintf tracepoint on a running session.
 #
 # Handles the full interrupt -> delete old -> set new -> continue cycle.
-# Works in both normal mode (ptrace) and QEMU stub mode (USE_QEMU_STUB=1).
 #
 # Usage:
 #   # Unconditional trace:
@@ -15,32 +14,34 @@
 #   ./scripts/gdb_trace.sh --clear
 #
 # Environment:
-#   GDB_PIPE  - pipe path (default: gdb_cmd_pipe)
+#   GDB_CONTAINER  - Docker container name (required)
+#   GDB_PIPE       - pipe path (default: gdb_cmd_pipe)
+#   GDB_DELAY      - seconds to wait after each command (default: 0.3)
 
 set -euo pipefail
 
 PIPE="${GDB_PIPE:-gdb_cmd_pipe}"
-PID_FILE=".gdb_pid"
-DELAY=0.3
+DELAY="${GDB_DELAY:-0.3}"
+
+if [ -z "${GDB_CONTAINER:-}" ]; then
+    echo "Error: GDB_CONTAINER is not set. Set it to your Docker container name." >&2
+    exit 1
+fi
 
 send_cmd() {
-    echo "$1" > "$PIPE"
+    if [ ! -p "$PIPE" ]; then
+        echo "Error: Named pipe '$PIPE' not found. Run gdb_start.sh first." >&2
+        exit 1
+    fi
+    if ! timeout 5 bash -c 'echo "$1" > "$2"' _ "$1" "$PIPE"; then
+        echo "Error: Pipe write timed out — GDB session may be dead. Run gdb_stop.sh and restart." >&2
+        exit 1
+    fi
     sleep "$DELAY"
 }
 
-get_gdb_pid() {
-    if [ ! -f "$PID_FILE" ]; then
-        echo "Error: PID file '$PID_FILE' not found. Run gdb_start.sh first." >&2
-        exit 1
-    fi
-    cat "$PID_FILE"
-}
-
 interrupt_gdb() {
-    # In QEMU stub mode gdb_start.sh launches gdb-multiarch; in normal mode it's gdb.
-    # Signal both so this function works regardless of which mode was used.
-    docker exec gdb-mcp-lab pkill -INT gdb-multiarch 2>/dev/null || true
-    docker exec gdb-mcp-lab pkill -INT gdb           2>/dev/null || true
+    docker exec "$GDB_CONTAINER" pkill -INT gdb-multiarch 2>/dev/null || true
     # GDB needs time to fully stop the inferior after SIGINT.
     # 0.5s is often not enough — commands sent too early are silently dropped.
     sleep 1
@@ -77,8 +78,7 @@ send_cmd "dprintf ${LOCATION}, ${FORMAT_ARGS}"
 
 # 4. Apply condition if provided
 if [ -n "$CONDITION" ]; then
-    # Use $bpnum - GDB's convenience variable for the last breakpoint set.
-    # This works because we're sending it directly to GDB (not through shell expansion).
+    # $bpnum is GDB's convenience variable for the last breakpoint set.
     send_cmd "condition \$bpnum ${CONDITION}"
 fi
 

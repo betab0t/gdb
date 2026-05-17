@@ -1,9 +1,6 @@
 #!/bin/bash
 # gdb_send.sh - Send a single GDB command to the named pipe.
 #
-# Works identically in normal (ptrace) and QEMU stub mode — the pipe is the
-# same regardless of how gdb_start.sh connected to the target.
-#
 # Usage:
 #   ./scripts/gdb_send.sh "dprintf loop_function, \"iteration=%d\\n\", iteration"
 #   ./scripts/gdb_send.sh "continue"
@@ -28,5 +25,8 @@ if [ ! -p "$PIPE" ]; then
     exit 1
 fi
 
-echo "$1" > "$PIPE"
+if ! timeout 5 bash -c 'echo "$1" > "$2"' _ "$1" "$PIPE"; then
+    echo "Error: Pipe write timed out — GDB session may be dead. Run gdb_stop.sh and restart." >&2
+    exit 1
+fi
 sleep "$DELAY"
