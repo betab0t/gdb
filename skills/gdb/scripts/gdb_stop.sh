@@ -5,15 +5,13 @@
 # Safe to call multiple times (idempotent).
 #
 # Usage:
-#   GDB_CONTAINER=my-container ./scripts/gdb_stop.sh
+#   ./scripts/gdb_stop.sh
 #
 # Environment:
-#   GDB_CONTAINER  - (required) Docker container name
-#   GDB_PIPE       - pipe path (default: gdb_cmd_pipe)
+#   GDB_PIPE  - pipe path (default: gdb_cmd_pipe)
 
 set -euo pipefail
 
-CONTAINER="${GDB_CONTAINER:?GDB_CONTAINER must be set to the Docker container name}"
 PIPE="${GDB_PIPE:-gdb_cmd_pipe}"
 PID_FILE=".gdb_pid"
 
@@ -23,26 +21,24 @@ if [ -f "$PID_FILE" ]; then
     GDB_PID=$(cat "$PID_FILE")
 
     # Find and kill the tail feeder (parent of the pipe reader).
+    # It shares the same parent PID and reads from the pipe.
     TAIL_PID=$(ps -eo pid,ppid,args 2>/dev/null \
         | grep "tail -f.*${PIPE}" \
         | grep -v grep \
         | awk '{print $1}' \
         | head -1) || true
 
-    # Kill GDB host-side process (also kills the inferior)
+    # Kill GDB (this also kills the inferior/target process)
     if kill -0 "$GDB_PID" 2>/dev/null; then
         kill "$GDB_PID" 2>/dev/null || true
     fi
-
-    # Also terminate GDB inside the container
-    docker exec "$CONTAINER" pkill -9 gdb 2>/dev/null || true
 
     # Kill the tail feeder
     if [ -n "${TAIL_PID:-}" ] && kill -0 "$TAIL_PID" 2>/dev/null; then
         kill "$TAIL_PID" 2>/dev/null || true
     fi
 
-    # Wait for the host-side GDB wrapper to exit (up to 3 seconds)
+    # Wait for processes to exit (up to 3 seconds)
     for _ in 1 2 3 4 5 6; do
         if ! kill -0 "$GDB_PID" 2>/dev/null; then
             break

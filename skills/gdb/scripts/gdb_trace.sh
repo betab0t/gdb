@@ -5,21 +5,19 @@
 #
 # Usage:
 #   # Unconditional trace:
-#   GDB_CONTAINER=my-container ./scripts/gdb_trace.sh loop_function '"iteration=%d\n", iteration'
+#   ./scripts/gdb_trace.sh loop_function '"iteration=%d\n", iteration'
 #
 #   # Conditional trace (only when iteration == 20):
-#   GDB_CONTAINER=my-container ./scripts/gdb_trace.sh loop_function '"haha\n"' 'iteration == 20'
+#   ./scripts/gdb_trace.sh loop_function '"haha\n"' 'iteration == 20'
 #
 #   # Delete all tracepoints without setting new ones:
-#   GDB_CONTAINER=my-container ./scripts/gdb_trace.sh --clear
+#   ./scripts/gdb_trace.sh --clear
 #
 # Environment:
-#   GDB_CONTAINER  - (required) Docker container name
-#   GDB_PIPE       - pipe path (default: gdb_cmd_pipe)
+#   GDB_PIPE  - pipe path (default: gdb_cmd_pipe)
 
 set -euo pipefail
 
-CONTAINER="${GDB_CONTAINER:?GDB_CONTAINER must be set to the Docker container name}"
 PIPE="${GDB_PIPE:-gdb_cmd_pipe}"
 PID_FILE=".gdb_pid"
 DELAY=0.3
@@ -38,7 +36,9 @@ get_gdb_pid() {
 }
 
 interrupt_gdb() {
-    docker exec "$CONTAINER" pkill -INT gdb 2>/dev/null || true
+    local pid
+    pid=$(get_gdb_pid)
+    kill -INT "$pid" 2>/dev/null || true
     # GDB needs time to fully stop the inferior after SIGINT.
     # 0.5s is often not enough — commands sent too early are silently dropped.
     sleep 1
@@ -55,8 +55,8 @@ fi
 
 # --- Normal trace flow ---
 if [ $# -lt 2 ]; then
-    echo "Usage: GDB_CONTAINER=<container> $0 <location> <format_and_args> [condition]" >&2
-    echo "       GDB_CONTAINER=<container> $0 --clear" >&2
+    echo "Usage: $0 <location> <format_and_args> [condition]" >&2
+    echo "       $0 --clear" >&2
     exit 1
 fi
 

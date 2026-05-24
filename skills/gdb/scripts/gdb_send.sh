@@ -1,8 +1,6 @@
 #!/bin/bash
 # gdb_send.sh - Send a single GDB command to the named pipe.
 #
-# Writes directly to the pipe — no container reference needed.
-#
 # Usage:
 #   ./scripts/gdb_send.sh "dprintf loop_function, \"iteration=%d\\n\", iteration"
 #   ./scripts/gdb_send.sh "continue"

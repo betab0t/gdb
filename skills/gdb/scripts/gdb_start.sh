@@ -1,59 +1,65 @@
 #!/bin/bash
-# gdb_start.sh - Start a GDB session with named pipe control (ptrace mode).
+# gdb_start.sh - Start a GDB session with named pipe control.
 #
 # Usage:
-#   GDB_CONTAINER=my-container ./scripts/gdb_start.sh ./my_executable [run-args...]
+#   ./scripts/gdb_start.sh ./my_executable
+#   ./scripts/gdb_start.sh ./my_executable scripts/custom_setup.gdb
 #
 # Creates:
 #   gdb_cmd_pipe  - named pipe for sending commands
 #   .gdb_pid      - file containing the GDB process PID
-#   trace.log     - GDB trace output (captured from docker exec stdout)
+#   trace.log     - GDB trace output (created by setup.gdb)
 #
 # Environment:
-#   GDB_CONTAINER  - (required) Docker container name running the target
-#   GDB_PIPE       - pipe path (default: gdb_cmd_pipe)
-#   GDB_REMOTE_DIR - directory inside the container holding the binary (default: /challenges)
+#   GDB_PIPE  - pipe path (default: gdb_cmd_pipe)
+#   GDB_BIN   - gdb binary (default: gdb-multiarch, falls back to gdb)
 
 set -euo pipefail
 
-CONTAINER="${GDB_CONTAINER:?GDB_CONTAINER must be set to the Docker container name}"
 PIPE="${GDB_PIPE:-gdb_cmd_pipe}"
 PID_FILE=".gdb_pid"
-REMOTE_DIR="${GDB_REMOTE_DIR:-/challenges}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SETUP="${2:-${SCRIPT_DIR}/setup.gdb}"
 
 if [ $# -lt 1 ]; then
-    echo "Usage: GDB_CONTAINER=<container> $0 <executable> [run-args...]" >&2
+    echo "Usage: $0 <executable> [setup.gdb path]" >&2
     exit 1
 fi
 
 EXECUTABLE="$1"
-shift
-RUN_ARGS=("$@")
-BASENAME=$(basename "$EXECUTABLE")
+
+if [ ! -f "$EXECUTABLE" ]; then
+    echo "Error: Executable '$EXECUTABLE' not found." >&2
+    exit 1
+fi
+
+# Determine GDB binary
+if [ -n "${GDB_BIN:-}" ]; then
+    GDB="$GDB_BIN"
+elif command -v gdb-multiarch &>/dev/null; then
+    GDB="gdb-multiarch"
+elif command -v gdb &>/dev/null; then
+    GDB="gdb"
+else
+    echo "Error: Neither gdb-multiarch nor gdb found." >&2
+    exit 1
+fi
 
 # Clean up any previous session
 rm -f "$PIPE" "$PID_FILE" trace.log
-docker exec "$CONTAINER" pkill -9 gdb 2>/dev/null || true
-sleep 0.3
 
 # Create named pipe
 mkfifo "$PIPE"
 
-# Start GDB inside the container, reading from the pipe.
-# GDB stdout is captured to trace.log on the host.
-tail -f "$PIPE" | docker exec -i "$CONTAINER" gdb -q --args "${REMOTE_DIR}/${BASENAME}" "${RUN_ARGS[@]}" > trace.log 2>&1 &
+# Start GDB in background, reading from the pipe
+tail -f "$PIPE" | "$GDB" -q -x "$SETUP" --args "$EXECUTABLE" &
 GDB_PID=$!
 
 echo "$GDB_PID" > "$PID_FILE"
 sleep 1
 
-# Send essential setup commands through the pipe
-echo "set pagination off"  > "$PIPE"; sleep 0.3
-echo "set confirm off"     > "$PIPE"; sleep 0.3
-echo "set print pretty on" > "$PIPE"; sleep 0.3
-
 echo "GDB started successfully."
-echo "  Container: $CONTAINER"
-echo "  PID:       $GDB_PID (saved to $PID_FILE)"
-echo "  Pipe:      $PIPE"
-echo "  Log:       trace.log"
+echo "  PID:   $GDB_PID (saved to $PID_FILE)"
+echo "  Pipe:  $PIPE"
+echo "  Log:   trace.log"
+echo "  Binary: $GDB"
