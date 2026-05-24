@@ -1,5 +1,5 @@
 #!/bin/bash
-# gdb_trace.sh - Set a conditional dprintf tracepoint on a running session.
+# gdb_trace.sh - Set a conditional dprintf tracepoint on a running QEMU-stub session.
 #
 # Handles the full interrupt -> delete old -> set new -> continue cycle.
 #
@@ -29,16 +29,8 @@ send_cmd() {
     sleep "$DELAY"
 }
 
-get_gdb_pid() {
-    if [ ! -f "$PID_FILE" ]; then
-        echo "Error: PID file '$PID_FILE' not found. Run gdb_start.sh first." >&2
-        exit 1
-    fi
-    cat "$PID_FILE"
-}
-
 interrupt_gdb() {
-    docker exec "$CONTAINER" pkill -INT gdb 2>/dev/null || true
+    docker exec "$CONTAINER" pkill -INT gdb-multiarch 2>/dev/null || true
     # GDB needs time to fully stop the inferior after SIGINT.
     # 0.5s is often not enough — commands sent too early are silently dropped.
     sleep 1
@@ -76,7 +68,6 @@ send_cmd "dprintf ${LOCATION}, ${FORMAT_ARGS}"
 # 4. Apply condition if provided
 if [ -n "$CONDITION" ]; then
     # Use $bpnum - GDB's convenience variable for the last breakpoint set.
-    # This works because we're sending it directly to GDB (not through shell expansion).
     send_cmd "condition \$bpnum ${CONDITION}"
 fi
 

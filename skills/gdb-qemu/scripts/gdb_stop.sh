@@ -1,7 +1,8 @@
 #!/bin/bash
-# gdb_stop.sh - Cleanly stop a GDB session started by gdb_start.sh.
+# gdb_stop.sh - Cleanly stop a QEMU-stub GDB session started by gdb_start.sh.
 #
-# Kills the target process, GDB, and the tail feeder, then removes session files.
+# Kills the gdb-multiarch host process, the QEMU stub inside the container,
+# and the tail feeder, then removes session files.
 # Safe to call multiple times (idempotent).
 #
 # Usage:
@@ -10,39 +11,40 @@
 # Environment:
 #   GDB_CONTAINER  - (required) Docker container name
 #   GDB_PIPE       - pipe path (default: gdb_cmd_pipe)
+#   QEMU_PORT      - QEMU stub port to kill (default: 1234)
 
 set -euo pipefail
 
 CONTAINER="${GDB_CONTAINER:?GDB_CONTAINER must be set to the Docker container name}"
 PIPE="${GDB_PIPE:-gdb_cmd_pipe}"
 PID_FILE=".gdb_pid"
+QEMU_PORT="${QEMU_PORT:-1234}"
 
-# 1. Kill processes (GDB + its children + tail feeder) BEFORE removing files.
-#    This avoids the race where the pipe is removed while GDB is still processing.
 if [ -f "$PID_FILE" ]; then
     GDB_PID=$(cat "$PID_FILE")
 
-    # Find and kill the tail feeder (parent of the pipe reader).
+    # Find the tail feeder
     TAIL_PID=$(ps -eo pid,ppid,args 2>/dev/null \
         | grep "tail -f.*${PIPE}" \
         | grep -v grep \
         | awk '{print $1}' \
         | head -1) || true
 
-    # Kill GDB host-side process (also kills the inferior)
+    # Kill the host-side gdb-multiarch subshell
     if kill -0 "$GDB_PID" 2>/dev/null; then
         kill "$GDB_PID" 2>/dev/null || true
     fi
 
-    # Also terminate GDB inside the container
-    docker exec "$CONTAINER" pkill -9 gdb 2>/dev/null || true
+    # Kill gdb-multiarch and QEMU stub inside the container
+    docker exec "$CONTAINER" pkill -9 gdb-multiarch                    2>/dev/null || true
+    docker exec "$CONTAINER" pkill -9 -f "qemu-x86_64 -g $QEMU_PORT"  2>/dev/null || true
 
     # Kill the tail feeder
     if [ -n "${TAIL_PID:-}" ] && kill -0 "$TAIL_PID" 2>/dev/null; then
         kill "$TAIL_PID" 2>/dev/null || true
     fi
 
-    # Wait for the host-side GDB wrapper to exit (up to 3 seconds)
+    # Wait for host-side process to exit (up to 3 seconds)
     for _ in 1 2 3 4 5 6; do
         if ! kill -0 "$GDB_PID" 2>/dev/null; then
             break
@@ -59,7 +61,6 @@ if [ -f "$PID_FILE" ]; then
     fi
 fi
 
-# 2. Remove session files AFTER processes are dead.
 rm -f "$PIPE" "$PID_FILE" trace.log
 
 echo "GDB session stopped and cleaned up."
